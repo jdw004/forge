@@ -17,6 +17,7 @@ type Store interface {
 	Finish(context.Context, model.Task, model.State, int, string) (bool, error)
 	Cancel(context.Context, string) error
 	Reap(context.Context) error
+	// Heartbeat registers or refreshes a node. Capacity zero retires the node.
 	Heartbeat(context.Context, model.Node) error
 	Nodes(context.Context) ([]model.Node, error)
 	Ping(context.Context) error

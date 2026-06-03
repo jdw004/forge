@@ -219,6 +219,10 @@ func (s *Store) Reap(_ context.Context) error {
 func (s *Store) Heartbeat(_ context.Context, n model.Node) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if n.Capacity == 0 {
+		delete(s.nodes, n.ID)
+		return nil
+	}
 	n.LastSeen = time.Now().UTC()
 	s.nodes[n.ID] = n
 	return nil
