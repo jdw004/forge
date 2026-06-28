@@ -1,0 +1,24 @@
+{
+  "name": "Research and summarize",
+  "tasks": [
+    {
+      "id": "research",
+      "steps": 20,
+      "step_ms": 50,
+      "tokens_per_step": 15,
+      "token_limit": 500,
+      "runtime_ms": 2500,
+      "max_attempts": 2
+    },
+    {
+      "id": "summarize",
+      "depends_on": ["research"],
+      "steps": 10,
+      "step_ms": 50,
+      "tokens_per_step": 20,
+      "token_limit": 300,
+      "runtime_ms": 1500,
+      "max_attempts": 2
+    }
+  ]
+}
