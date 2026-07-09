@@ -1,8 +1,8 @@
 # Forge HTTP API
 
 The API accepts declarative workflows for simulated agents. No model provider,
-cloud account, or executable code is invoked. The application entry point and
-server startup commands will be added in the next milestone.
+cloud account, or executable code is invoked. Run `go run ./cmd/forge -mode demo`
+to start a local API with embedded workers; see the repository README for setup.
 
 All `/v1` endpoints require `Authorization: Bearer <token>` when
 `FORGE_API_TOKEN` is configured. An empty token is intended for a loopback demo.
