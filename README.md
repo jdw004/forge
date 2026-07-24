@@ -1,5 +1,7 @@
 # Forge
 
+[GitHub repository](https://github.com/jdw004/forge)
+
 An agent execution engine in Go, with a Chi HTTP API, dependency-aware workflows,
 bounded worker pools, and PostgreSQL task leases. Token and runtime circuit
 breakers stop the built-in simulated agents. No cloud credentials or model
@@ -45,7 +47,7 @@ go run ./cmd/forge -mode demo -demo-nodes 2 -concurrency 8
 | --- | --- | --- |
 | `demo` | In-memory | HTTP API and embedded worker pools |
 | `api` | PostgreSQL | HTTP API only |
-| `worker` | PostgreSQL | One worker pool; no HTTP listener |
+| `worker` | PostgreSQL | One worker pool; optional metrics listener |
 | `migrate` | PostgreSQL | Apply embedded migrations, then exit |
 
 The default mode is `demo`. Flags override environment values. `forge -h` lists
@@ -61,6 +63,9 @@ flags. The application reads environment variables directly; it does not load
 | `FORGE_WORKER_ID` | Generated | Unique identity for an independent worker |
 | `FORGE_API_TOKEN` | Empty | Bearer token; use a random secret |
 | `DATABASE_URL` | Empty | Required in PostgreSQL modes |
+| `FORGE_METRICS_ADDR` | Empty | Optional worker metrics address |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | Optional trace collector base URL |
+| `FORGE_TRACE_SAMPLE_RATIO` | `0.1` | Sampling ratio for new root traces |
 
 Binding beyond loopback requires an API token of at least 32 bytes. Put a TLS
 reverse proxy in front of any remote deployment; the application listener is HTTP.
@@ -92,6 +97,11 @@ attempt limit. Execution is at least once across lost leases; future external
 effects must be idempotent. Circuit-breaker failures are terminal.
 
 ## Validation and scope
+
+Prometheus metrics are available at `/metrics` in API/demo modes. OpenTelemetry
+tracing is disabled until a collector endpoint is configured. The
+[observability guide](docs/observability.md) covers metrics, tracing setup, and
+scraping independent workers.
 
 ```sh
 go test -race ./...

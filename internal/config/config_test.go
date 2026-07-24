@@ -71,3 +71,20 @@ func TestLoopbackAndAuthenticatedRemoteBinding(t *testing.T) {
 		}
 	}
 }
+
+func TestTelemetryConfiguration(t *testing.T) {
+	for _, values := range []map[string]string{
+		{"FORGE_TRACE_SAMPLE_RATIO": "NaN"}, {"FORGE_TRACE_SAMPLE_RATIO": "1.5"}, {"FORGE_TRACE_SAMPLE_RATIO": "bad"},
+		{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://user:secret@collector"},
+		{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector?token=secret"},
+		{"FORGE_MODE": "worker", "DATABASE_URL": "postgres://localhost/forge", "FORGE_METRICS_ADDR": "0.0.0.0:9091"},
+	} {
+		if _, err := Load(nil, env(values)); err == nil {
+			t.Fatal("invalid telemetry configuration accepted")
+		}
+	}
+	cfg, err := Load(nil, env(map[string]string{"FORGE_MODE": "worker", "DATABASE_URL": "postgres://localhost/forge", "FORGE_METRICS_ADDR": "127.0.0.1:9091", "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318", "FORGE_TRACE_SAMPLE_RATIO": "0.5"}))
+	if err != nil || cfg.TraceSampleRatio != .5 || cfg.MetricsAddr != "127.0.0.1:9091" || cfg.TraceService != "forge-worker" {
+		t.Fatalf("telemetry configuration: %+v %v", cfg, err)
+	}
+}

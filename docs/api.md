@@ -13,6 +13,7 @@ the operations console will use same-origin requests.
 | --- | --- | --- |
 | GET | `/healthz` | Process is responsive; 200 |
 | GET | `/readyz` | Queue responds; 200, or 503 when unavailable |
+| GET | `/metrics` | Prometheus metrics; same bearer authentication as `/v1` |
 | POST | `/v1/workflows` | Validate and submit a workflow; 201 |
 | GET | `/v1/workflows?limit=20` | Latest 1–100 workflow summaries with task counts |
 | GET | `/v1/workflows/{id}` | Workflow and all tasks |

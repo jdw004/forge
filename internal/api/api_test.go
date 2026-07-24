@@ -259,3 +259,17 @@ func TestInvalidLookupsAndLimits(t *testing.T) {
 		t.Fatalf("unsupported method: %d", response.Code)
 	}
 }
+
+func TestWorkerMetricsAreAuthenticatedWithoutWorkflowRoutes(t *testing.T) {
+	metrics := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "forge_task_active 0\n") })
+	h := handler(t, memory.New(), Config{Token: "test-secret", Metrics: metrics, MetricsOnly: true})
+	expectCode(t, request(h, "GET", "/metrics", "", nil), http.StatusUnauthorized, "unauthorized")
+	response := request(h, "GET", "/metrics", "", map[string]string{"Authorization": "Bearer test-secret"})
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "forge_task_active 0") {
+		t.Fatalf("metrics unavailable: %s", response.Body.String())
+	}
+	expectCode(t, request(h, "GET", "/v1/workflows", "", map[string]string{"Authorization": "Bearer test-secret"}), http.StatusNotFound, "not_found")
+	if response := request(h, "GET", "/healthz", "", nil); response.Code != http.StatusOK {
+		t.Fatal("metrics listener health unavailable")
+	}
+}

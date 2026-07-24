@@ -15,6 +15,12 @@ import (
 	"forge/internal/queue"
 )
 
+// Observer receives every attempt, including attempts whose result could not
+// be committed. Implementations must be concurrency-safe and nonblocking.
+type Observer interface {
+	StartTask(context.Context, model.Task) (context.Context, func(engine.Result, bool))
+}
+
 type Config struct {
 	ID                string
 	Concurrency       int
@@ -25,6 +31,7 @@ type Config struct {
 	ReapInterval      time.Duration
 	StoreTimeout      time.Duration
 	Logger            *slog.Logger
+	Observer          Observer
 	// OnResult observes durably accepted results only. It must be safe for
 	// concurrent calls and return promptly; metrics exporters can hook in here.
 	OnResult func(model.Task, engine.Result)
@@ -173,6 +180,13 @@ func (w *Worker) slot(ctx context.Context) {
 }
 
 func (w *Worker) execute(ctx context.Context, task model.Task) {
+	var result engine.Result
+	committed := false
+	if w.cfg.Observer != nil {
+		var observe func(engine.Result, bool)
+		ctx, observe = w.cfg.Observer.StartTask(ctx, task)
+		defer func() { observe(result, committed) }()
+	}
 	execution, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var lost atomic.Bool
@@ -203,7 +217,7 @@ func (w *Worker) execute(ctx context.Context, task model.Task) {
 			}
 		}
 	}()
-	result := engine.Execute(execution, task.TaskSpec)
+	result = engine.Execute(execution, task.TaskSpec)
 	cancel()
 	<-renewed
 	if ctx.Err() != nil || lost.Load() {
@@ -217,6 +231,7 @@ func (w *Worker) execute(ctx context.Context, task model.Task) {
 		w.cfg.Logger.Error("task completion failed; lease will recover", "task", task.ID, "worker", w.ID(), "error", err)
 		return
 	}
+	committed = ok
 	if ok && w.cfg.OnResult != nil {
 		w.cfg.OnResult(task, result)
 	}

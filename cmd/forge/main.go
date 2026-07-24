@@ -17,6 +17,7 @@ import (
 	"forge/internal/memory"
 	"forge/internal/queue"
 	"forge/internal/store"
+	"forge/internal/telemetry"
 )
 
 func main() {
@@ -64,13 +65,28 @@ func run(ctx context.Context, args []string, getenv func(string) string, logger 
 			return nil
 		}
 	}
-	runtime, err := app.New(cfg, tasks, logger)
+	monitor, err := telemetry.New(ctx, telemetry.Config{ServiceName: cfg.TraceService, Endpoint: cfg.TraceEndpoint, SampleRatio: cfg.TraceSampleRatio})
+	if err != nil {
+		return fmt.Errorf("initialize telemetry: %w", err)
+	}
+	defer func() {
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := monitor.Shutdown(shutdown); err != nil {
+			logger.Warn("trace export shutdown failed", "error", err)
+		}
+	}()
+	runtime, err := app.New(cfg, tasks, logger, monitor)
 	if err != nil {
 		return err
 	}
 	var listener net.Listener
-	if cfg.Mode != "worker" {
-		listener, err = (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.Addr)
+	address := cfg.Addr
+	if cfg.Mode == "worker" {
+		address = cfg.MetricsAddr
+	}
+	if address != "" {
+		listener, err = (&net.ListenConfig{}).Listen(ctx, "tcp", address)
 		if err != nil {
 			return fmt.Errorf("listen: %w", err)
 		}

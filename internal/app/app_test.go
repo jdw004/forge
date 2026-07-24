@@ -71,14 +71,19 @@ func configuration(t *testing.T, mode string) config.Config {
 
 func start(t *testing.T, mode string, store queue.Store) (*http.Client, func()) {
 	t.Helper()
-	a, err := New(configuration(t, mode), store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return startConfigured(t, configuration(t, mode), store)
+}
+
+func startConfigured(t *testing.T, cfg config.Config, store queue.Store) (*http.Client, func()) {
+	t.Helper()
+	a, err := New(cfg, store, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var listener net.Listener
 	var client *http.Client
-	if mode != "worker" {
+	if cfg.Mode != "worker" || cfg.MetricsAddr != "" {
 		pipe := &pipeListener{connections: make(chan net.Conn), done: make(chan struct{})}
 		listener = pipe
 		transport := &http.Transport{DialContext: pipe.dial, DisableKeepAlives: true}
@@ -165,6 +170,18 @@ func TestDemoServesHTTPAndExecutesWorkflow(t *testing.T) {
 			t.Fatalf("incorrect execution: %+v", task)
 		}
 	}
+	eventually(t, "committed task metrics", func() bool {
+		response, err := client.Get("http://forge/metrics")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return response.StatusCode == http.StatusOK && strings.Contains(string(body), `forge_tasks_completed_total{state="succeeded"} 2`) && strings.Contains(string(body), "forge_worker_capacity 4")
+	})
 	stop()
 	nodes, _ := store.Nodes(context.Background())
 	if len(nodes) != 0 {
@@ -218,7 +235,7 @@ func (f failingRegistration) Heartbeat(context.Context, model.Node) error {
 }
 
 func TestWorkerStartupFailureStopsApplication(t *testing.T) {
-	a, err := New(configuration(t, "demo"), failingRegistration{memory.New()}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a, err := New(configuration(t, "demo"), failingRegistration{memory.New()}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +255,7 @@ func TestWorkerStartupFailureStopsApplication(t *testing.T) {
 
 func TestListenerFailureStopsWorkers(t *testing.T) {
 	store := memory.New()
-	a, err := New(configuration(t, "demo"), store, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	a, err := New(configuration(t, "demo"), store, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,4 +270,27 @@ func TestListenerFailureStopsWorkers(t *testing.T) {
 	if len(nodes) != 0 {
 		t.Fatal("workers survived listener failure")
 	}
+}
+
+func TestOptionalWorkerListenerExposesOnlyMetricsAndHealth(t *testing.T) {
+	cfg := configuration(t, "worker")
+	cfg.MetricsAddr = "127.0.0.1:9091"
+	client, stop := startConfigured(t, cfg, memory.New())
+	for _, test := range []struct {
+		path   string
+		status int
+	}{
+		{"/metrics", http.StatusOK}, {"/healthz", http.StatusOK}, {"/readyz", http.StatusOK}, {"/v1/workflows", http.StatusNotFound},
+	} {
+		response, err := client.Get("http://forge" + test.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != test.status {
+			t.Fatalf("%s: got %d, want %d", test.path, response.StatusCode, test.status)
+		}
+	}
+	stop()
 }

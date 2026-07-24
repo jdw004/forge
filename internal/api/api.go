@@ -28,6 +28,9 @@ type Config struct {
 	Token          string
 	RequestTimeout time.Duration
 	Logger         *slog.Logger
+	Metrics        http.Handler
+	MetricsOnly    bool
+	Middleware     func(http.Handler) http.Handler
 }
 
 type server struct {
@@ -70,19 +73,30 @@ func New(store queue.Store, cfg Config) (http.Handler, error) {
 	}
 	s := &server{store: store, cfg: cfg}
 	r := chi.NewRouter()
+	if cfg.Middleware != nil {
+		r.Use(cfg.Middleware)
+	}
 	r.Use(s.requestContext)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	r.Get("/readyz", s.ready)
-	r.Route("/v1", func(r chi.Router) {
-		r.Use(s.authenticate)
-		r.Get("/workflows", s.list)
-		r.Post("/workflows", s.create)
-		r.Get("/workflows/{id}", s.get)
-		r.Post("/workflows/{id}/cancel", s.cancel)
-		r.Get("/nodes", s.nodes)
-	})
+	if cfg.Metrics != nil {
+		r.Group(func(r chi.Router) {
+			r.Use(s.authenticate)
+			r.Method(http.MethodGet, "/metrics", cfg.Metrics)
+		})
+	}
+	if !cfg.MetricsOnly {
+		r.Route("/v1", func(r chi.Router) {
+			r.Use(s.authenticate)
+			r.Get("/workflows", s.list)
+			r.Post("/workflows", s.create)
+			r.Get("/workflows/{id}", s.get)
+			r.Post("/workflows/{id}/cancel", s.cancel)
+			r.Get("/nodes", s.nodes)
+		})
+	}
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Route not found")
 	})

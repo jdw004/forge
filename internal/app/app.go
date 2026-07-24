@@ -16,6 +16,7 @@ import (
 	"forge/internal/api"
 	"forge/internal/config"
 	"forge/internal/queue"
+	"forge/internal/telemetry"
 	"forge/internal/worker"
 )
 
@@ -27,7 +28,7 @@ type App struct {
 	running atomic.Bool
 }
 
-func New(cfg config.Config, store queue.Store, logger *slog.Logger) (*App, error) {
+func New(cfg config.Config, store queue.Store, logger *slog.Logger, monitor *telemetry.Telemetry) (*App, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -40,9 +41,12 @@ func New(cfg config.Config, store queue.Store, logger *slog.Logger) (*App, error
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if monitor == nil {
+		monitor = telemetry.Local()
+	}
 	a := &App{cfg: cfg, logger: logger}
-	if cfg.Mode != "worker" {
-		handler, err := api.New(store, api.Config{Token: cfg.Token, Logger: logger})
+	if cfg.Mode != "worker" || cfg.MetricsAddr != "" {
+		handler, err := api.New(store, api.Config{Token: cfg.Token, Logger: logger, Metrics: monitor.Handler(), MetricsOnly: cfg.Mode == "worker", Middleware: monitor.HTTPMiddleware})
 		if err != nil {
 			return nil, err
 		}
@@ -60,24 +64,26 @@ func New(cfg config.Config, store queue.Store, logger *slog.Logger) (*App, error
 		if cfg.Mode == "demo" {
 			id = fmt.Sprintf("demo-%02d", i+1)
 		}
-		w, err := worker.New(store, worker.Config{ID: id, Concurrency: cfg.Concurrency, Logger: logger})
+		w, err := worker.New(store, worker.Config{ID: id, Concurrency: cfg.Concurrency, Logger: logger, Observer: monitor})
 		if err != nil {
 			return nil, err
 		}
 		a.workers = append(a.workers, w)
 	}
+	monitor.SetCapacity(len(a.workers) * cfg.Concurrency)
 	return a, nil
 }
 
 // Run takes ownership of the listener, serves until cancellation, and joins all
-// workers before returning. Worker mode takes a nil listener and exposes no API.
+// workers before returning. Worker mode takes a nil listener unless a metrics
+// address is configured; that listener exposes only metrics and health probes.
 // The caller owns the store and must close it only after Run returns.
 func (a *App) Run(parent context.Context, listener net.Listener) error {
 	if a.handler != nil && listener == nil {
 		return errors.New("HTTP mode requires a listener")
 	}
 	if a.handler == nil && listener != nil {
-		return errors.New("worker mode does not accept an HTTP listener")
+		return errors.New("no HTTP listener is configured")
 	}
 	if !a.running.CompareAndSwap(false, true) {
 		return errors.New("application is already running")

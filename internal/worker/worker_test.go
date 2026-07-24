@@ -312,3 +312,47 @@ func TestInvalidWorkerConfiguration(t *testing.T) {
 		t.Fatalf("defaults invalid: %v", err)
 	}
 }
+
+type observation struct {
+	result    engine.Result
+	committed bool
+}
+type observer struct{ events chan observation }
+
+func (o observer) StartTask(ctx context.Context, task model.Task) (context.Context, func(engine.Result, bool)) {
+	return ctx, func(result engine.Result, committed bool) { o.events <- observation{result, committed} }
+}
+
+func TestObserverDistinguishesAcceptedAndAbandonedResults(t *testing.T) {
+	for _, lost := range []bool{false, true} {
+		t.Run(fmt.Sprintf("lease_lost_%v", lost), func(t *testing.T) {
+			var store queue.Store = memory.New()
+			task := spec("observed")
+			if lost {
+				store = &unavailableLease{Store: store}
+				task.StepMS = 1000
+				task.Runaway = true
+			}
+			create(t, store, task)
+			events := make(chan observation, 1)
+			cfg := config("observed-worker", 1)
+			cfg.Observer = observer{events}
+			_, stop := start(t, store, cfg)
+			select {
+			case event := <-events:
+				if event.committed == lost {
+					t.Fatalf("incorrect committed flag: %+v", event)
+				}
+				if lost && event.result.State != model.Cancelled {
+					t.Fatalf("lost lease result: %+v", event)
+				}
+				if !lost && event.result.State != model.Succeeded {
+					t.Fatalf("accepted result: %+v", event)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("attempt was not observed")
+			}
+			stop()
+		})
+	}
+}
