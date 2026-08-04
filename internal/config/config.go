@@ -27,7 +27,8 @@ Usage: forge [-mode demo|api|worker|migrate] [options]
 
 Environment: FORGE_MODE, FORGE_ADDR, FORGE_CONCURRENCY, FORGE_DEMO_NODES,
 FORGE_WORKER_ID, FORGE_API_TOKEN, DATABASE_URL, FORGE_METRICS_ADDR,
-OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME, FORGE_TRACE_SAMPLE_RATIO.
+OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME, FORGE_TRACE_SAMPLE_RATIO,
+FORGE_CLOUD_REGION.
 Flags override their corresponding environment variables. Secrets are env-only.
 Demo mode uses volatile memory and simulated agents; no cloud service is called.
 `
@@ -44,6 +45,7 @@ type Config struct {
 	TraceEndpoint    string
 	TraceService     string
 	TraceSampleRatio float64
+	CloudRegion      string
 }
 
 func Load(args []string, getenv func(string) string) (Config, error) {
@@ -60,6 +62,7 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	concurrency := value("FORGE_CONCURRENCY", "256")
 	nodes := value("FORGE_DEMO_NODES", "10")
 	cfg := Config{Token: getenv("FORGE_API_TOKEN"), DatabaseURL: getenv("DATABASE_URL"), TraceEndpoint: getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), TraceService: getenv("OTEL_SERVICE_NAME")}
+	cfg.CloudRegion = value("FORGE_CLOUD_REGION", "us-east-1")
 	flags := flag.NewFlagSet("forge", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	flags.StringVar(&cfg.Mode, "mode", value("FORGE_MODE", "demo"), "execution mode")
@@ -107,6 +110,9 @@ func (c Config) Validate() error {
 	}
 	if len(c.WorkerID) > 128 {
 		return errors.New("worker ID must be at most 128 bytes")
+	}
+	if len(c.CloudRegion) > 64 {
+		return errors.New("cloud region label must be at most 64 bytes")
 	}
 	if strings.ContainsAny(c.Token, " \t\r\n") {
 		return errors.New("API token must not contain whitespace")

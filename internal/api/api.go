@@ -25,12 +25,16 @@ import (
 const MaxBodyBytes = 4 << 20
 
 type Config struct {
-	Token          string
-	RequestTimeout time.Duration
-	Logger         *slog.Logger
-	Metrics        http.Handler
-	MetricsOnly    bool
-	Middleware     func(http.Handler) http.Handler
+	Token             string
+	RequestTimeout    time.Duration
+	Logger            *slog.Logger
+	Metrics           http.Handler
+	MetricsOnly       bool
+	Middleware        func(http.Handler) http.Handler
+	Console           http.Handler
+	Mode              string
+	CloudRegion       string
+	TracingConfigured bool
 }
 
 type server struct {
@@ -88,6 +92,12 @@ func New(store queue.Store, cfg Config) (http.Handler, error) {
 		})
 	}
 	if !cfg.MetricsOnly {
+		if cfg.Console != nil {
+			r.Method(http.MethodGet, "/", cfg.Console)
+			r.Method(http.MethodHead, "/", cfg.Console)
+			r.Method(http.MethodGet, "/assets/*", cfg.Console)
+			r.Method(http.MethodHead, "/assets/*", cfg.Console)
+		}
 		r.Route("/v1", func(r chi.Router) {
 			r.Use(s.authenticate)
 			r.Get("/workflows", s.list)
@@ -95,6 +105,7 @@ func New(store queue.Store, cfg Config) (http.Handler, error) {
 			r.Get("/workflows/{id}", s.get)
 			r.Post("/workflows/{id}/cancel", s.cancel)
 			r.Get("/nodes", s.nodes)
+			r.Get("/system", s.system)
 		})
 	}
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
@@ -296,4 +307,22 @@ func (s *server) nodes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": nodes})
+}
+
+func (s *server) system(w http.ResponseWriter, r *http.Request) {
+	mode, storage := s.cfg.Mode, "memory"
+	if mode == "" {
+		mode = "demo"
+	}
+	if mode == "api" {
+		storage = "postgresql"
+	}
+	region := s.cfg.CloudRegion
+	if region == "" {
+		region = "us-east-1"
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"mode": mode, "storage": storage, "tracing_configured": s.cfg.TracingConfigured,
+		"cloud": map[string]any{"provider": "AWS", "region": region, "simulated": true, "connected": false},
+	})
 }

@@ -15,6 +15,7 @@ import (
 
 	"forge/internal/api"
 	"forge/internal/config"
+	"forge/internal/console"
 	"forge/internal/queue"
 	"forge/internal/telemetry"
 	"forge/internal/worker"
@@ -46,7 +47,10 @@ func New(cfg config.Config, store queue.Store, logger *slog.Logger, monitor *tel
 	}
 	a := &App{cfg: cfg, logger: logger}
 	if cfg.Mode != "worker" || cfg.MetricsAddr != "" {
-		handler, err := api.New(store, api.Config{Token: cfg.Token, Logger: logger, Metrics: monitor.Handler(), MetricsOnly: cfg.Mode == "worker", Middleware: monitor.HTTPMiddleware})
+		handler, err := api.New(store, api.Config{
+			Token: cfg.Token, Logger: logger, Metrics: monitor.Handler(), MetricsOnly: cfg.Mode == "worker", Middleware: monitor.HTTPMiddleware,
+			Console: console.Handler(), Mode: cfg.Mode, CloudRegion: cfg.CloudRegion, TracingConfigured: cfg.TraceEndpoint != "",
+		})
 		if err != nil {
 			return nil, err
 		}

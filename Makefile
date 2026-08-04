@@ -1,4 +1,4 @@
-.PHONY: demo api worker migrate test integration fmt vet build up down load
+.PHONY: demo api worker migrate test test-console integration fmt vet build up down load
 demo:
 	go run ./cmd/forge -mode demo
 api:
@@ -9,6 +9,8 @@ migrate:
 	go run ./cmd/forge -mode migrate
 test:
 	go test -race ./...
+test-console:
+	node --test internal/console/model_test.mjs
 integration:
 	go test -race -tags integration ./internal/store
 fmt:

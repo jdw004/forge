@@ -7,7 +7,8 @@ to start a local API with embedded workers; see the repository README for setup.
 All `/v1` endpoints require `Authorization: Bearer <token>` when
 `FORGE_API_TOKEN` is configured. An empty token is intended for a loopback demo.
 Health probes remain public and expose no workflow data. There is no CORS grant;
-the operations console will use same-origin requests.
+the operations console uses same-origin requests. The public root path serves
+only the static console shell; API data still requires authentication.
 
 | Method | Path | Behavior |
 | --- | --- | --- |
@@ -19,6 +20,11 @@ the operations console will use same-origin requests.
 | GET | `/v1/workflows/{id}` | Workflow and all tasks |
 | POST | `/v1/workflows/{id}/cancel` | Cancel pending/running tasks; 204 |
 | GET | `/v1/nodes` | Workers with a heartbeat within the last 10 seconds |
+| GET | `/v1/system` | Mode, storage, region profile, and trace configuration |
+
+System metadata always reports the cloud profile as simulated and disconnected.
+It exposes neither credentials nor database/collector URLs. A configured trace
+exporter is not a health check for collector delivery.
 
 ## Submission
 

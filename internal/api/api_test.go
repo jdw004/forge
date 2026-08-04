@@ -273,3 +273,28 @@ func TestWorkerMetricsAreAuthenticatedWithoutWorkflowRoutes(t *testing.T) {
 		t.Fatal("metrics listener health unavailable")
 	}
 }
+
+func TestSystemMetadataDescribesSimulationWithoutExposingSecrets(t *testing.T) {
+	h := handler(t, memory.New(), Config{Token: "private-token", Mode: "api", CloudRegion: "eu-west-1", TracingConfigured: true})
+	expectCode(t, request(h, "GET", "/v1/system", "", nil), http.StatusUnauthorized, "unauthorized")
+	response := request(h, "GET", "/v1/system", "", map[string]string{"Authorization": "Bearer private-token"})
+	var got struct {
+		Mode    string `json:"mode"`
+		Storage string `json:"storage"`
+		Tracing bool   `json:"tracing_configured"`
+		Cloud   struct {
+			Connected bool   `json:"connected"`
+			Simulated bool   `json:"simulated"`
+			Region    string `json:"region"`
+		} `json:"cloud"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusOK || got.Mode != "api" || got.Storage != "postgresql" || !got.Tracing || got.Cloud.Connected || !got.Cloud.Simulated || got.Cloud.Region != "eu-west-1" {
+		t.Fatalf("incorrect system metadata: %+v", got)
+	}
+	if strings.Contains(response.Body.String(), "private-token") {
+		t.Fatal("secret leaked in metadata")
+	}
+}

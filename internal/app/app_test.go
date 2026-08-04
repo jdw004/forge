@@ -280,7 +280,7 @@ func TestOptionalWorkerListenerExposesOnlyMetricsAndHealth(t *testing.T) {
 		path   string
 		status int
 	}{
-		{"/metrics", http.StatusOK}, {"/healthz", http.StatusOK}, {"/readyz", http.StatusOK}, {"/v1/workflows", http.StatusNotFound},
+		{"/metrics", http.StatusOK}, {"/healthz", http.StatusOK}, {"/readyz", http.StatusOK}, {"/v1/workflows", http.StatusNotFound}, {"/", http.StatusNotFound},
 	} {
 		response, err := client.Get("http://forge" + test.path)
 		if err != nil {
@@ -293,4 +293,51 @@ func TestOptionalWorkerListenerExposesOnlyMetricsAndHealth(t *testing.T) {
 		}
 	}
 	stop()
+}
+
+func TestConsoleShellIsPublicAndSystemDataIsAuthenticated(t *testing.T) {
+	cfg := configuration(t, "demo")
+	cfg.Token = "private-token"
+	client, stop := startConfigured(t, cfg, memory.New())
+	defer stop()
+	response, err := client.Get("http://forge/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), "Execution overview") || strings.Contains(string(body), cfg.Token) || response.Header.Get("Content-Security-Policy") == "" {
+		t.Fatal("console shell unavailable, unprotected, or leaking token")
+	}
+	response, err = client.Get("http://forge/v1/system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusUnauthorized {
+		t.Fatal("system data exposed without authentication")
+	}
+	request, err := http.NewRequest("GET", "http://forge/v1/system", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+cfg.Token)
+	response, err = client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var metadata struct {
+		Mode    string `json:"mode"`
+		Storage string `json:"storage"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&metadata); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || metadata.Mode != "demo" || metadata.Storage != "memory" {
+		t.Fatalf("unexpected console metadata: %+v", metadata)
+	}
 }
