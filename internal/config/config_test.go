@@ -3,6 +3,8 @@ package config
 import (
 	"errors"
 	"flag"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -86,5 +88,49 @@ func TestTelemetryConfiguration(t *testing.T) {
 	cfg, err := Load(nil, env(map[string]string{"FORGE_MODE": "worker", "DATABASE_URL": "postgres://localhost/forge", "FORGE_METRICS_ADDR": "127.0.0.1:9091", "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318", "FORGE_TRACE_SAMPLE_RATIO": "0.5"}))
 	if err != nil || cfg.TraceSampleRatio != .5 || cfg.MetricsAddr != "127.0.0.1:9091" || cfg.TraceService != "forge-worker" {
 		t.Fatalf("telemetry configuration: %+v %v", cfg, err)
+	}
+}
+
+func TestMountedSecretsConfigureWorker(t *testing.T) {
+	directory := t.TempDir()
+	token := strings.Repeat("a", 64)
+	database := "postgres://forge:private-password@postgres:5432/forge?sslmode=disable&pool_max_conns=8"
+	for name, value := range map[string]string{"token": token, "database": database} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(value+"\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := Load([]string{"-mode", "worker", "-metrics-addr", "0.0.0.0:9091"}, env(map[string]string{
+		"FORGE_API_TOKEN_FILE": filepath.Join(directory, "token"), "DATABASE_URL_FILE": filepath.Join(directory, "database"),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Token != token || cfg.DatabaseURL != database {
+		t.Fatal("mounted secret values were not loaded correctly")
+	}
+}
+
+func TestMountedSecretErrorsDoNotExposeValues(t *testing.T) {
+	directory := t.TempDir()
+	for name, value := range map[string]string{"empty": "\n", "large": strings.Repeat("x", 8193), "token": "private-secret\n"} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, values := range []map[string]string{
+		{"FORGE_API_TOKEN_FILE": filepath.Join(directory, "missing")},
+		{"FORGE_API_TOKEN_FILE": filepath.Join(directory, "empty")},
+		{"FORGE_API_TOKEN_FILE": filepath.Join(directory, "large")},
+		{"FORGE_API_TOKEN": "private-secret", "FORGE_API_TOKEN_FILE": filepath.Join(directory, "token")},
+		{"DATABASE_URL": "postgres://private-secret@localhost/forge", "DATABASE_URL_FILE": filepath.Join(directory, "token")},
+	} {
+		_, err := Load(nil, env(values))
+		if err == nil || strings.Contains(err.Error(), "private-secret") {
+			t.Fatalf("expected sanitized configuration error; got %v", err)
+		}
+	}
+	if _, err := Load([]string{"-h"}, env(map[string]string{"FORGE_API_TOKEN_FILE": "/missing"})); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("help should not read secrets: %v", err)
 	}
 }

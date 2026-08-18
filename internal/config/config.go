@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -29,7 +30,8 @@ Environment: FORGE_MODE, FORGE_ADDR, FORGE_CONCURRENCY, FORGE_DEMO_NODES,
 FORGE_WORKER_ID, FORGE_API_TOKEN, DATABASE_URL, FORGE_METRICS_ADDR,
 OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME, FORGE_TRACE_SAMPLE_RATIO,
 FORGE_CLOUD_REGION.
-Flags override their corresponding environment variables. Secrets are env-only.
+FORGE_API_TOKEN_FILE and DATABASE_URL_FILE can read mounted secret files.
+Flags override their corresponding environment variables. Secrets are not flags.
 Demo mode uses volatile memory and simulated agents; no cloud service is called.
 `
 
@@ -78,6 +80,12 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		return cfg, errors.New("unexpected positional arguments")
 	}
 	var err error
+	if cfg.Token, err = secret(getenv, "FORGE_API_TOKEN"); err != nil {
+		return cfg, err
+	}
+	if cfg.DatabaseURL, err = secret(getenv, "DATABASE_URL"); err != nil {
+		return cfg, err
+	}
 	if cfg.Concurrency, err = strconv.Atoi(concurrency); err != nil {
 		return cfg, errors.New("concurrency must be an integer")
 	}
@@ -91,6 +99,33 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		return cfg, errors.New("trace sample ratio must be a number from 0 to 1")
 	}
 	return cfg, cfg.Validate()
+}
+
+func secret(getenv func(string) string, name string) (string, error) {
+	value, path := getenv(name), getenv(name+"_FILE")
+	if path == "" {
+		return value, nil
+	}
+	if value != "" {
+		return "", fmt.Errorf("set only one of %s and %s_FILE", name, name)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("cannot read %s_FILE", name)
+	}
+	defer file.Close()
+	body, err := io.ReadAll(io.LimitReader(file, 8193))
+	if err != nil {
+		return "", fmt.Errorf("cannot read %s_FILE", name)
+	}
+	if len(body) > 8192 {
+		return "", fmt.Errorf("%s_FILE exceeds 8 KiB", name)
+	}
+	value = strings.TrimRight(string(body), "\r\n")
+	if value == "" {
+		return "", fmt.Errorf("%s_FILE is empty", name)
+	}
+	return value, nil
 }
 
 func (c Config) Validate() error {

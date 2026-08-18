@@ -91,3 +91,6 @@ collector connectivity: configuration alone is not evidence of a cloud connectio
 
 Tests use an in-memory span exporter and HTTP recorder, requiring no Docker or
 collector. Live trace delivery remains a separate deployment check.
+
+The optional [Compose monitoring configuration](containers.md#optional-monitoring)
+provides Prometheus discovery for worker replicas and an OTLP debug collector.

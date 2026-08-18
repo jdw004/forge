@@ -1,0 +1,102 @@
+name: forge
+
+x-forge: &forge
+  image: forge:dev
+  build:
+    context: .
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  stop_grace_period: 20s
+  secrets: [database_url, api_token]
+
+x-forge-environment: &forge-environment
+  DATABASE_URL_FILE: /run/secrets/database_url
+  FORGE_API_TOKEN_FILE: /run/secrets/api_token
+  FORGE_CONCURRENCY: ${FORGE_CONCURRENCY:-256}
+  FORGE_CLOUD_REGION: ${FORGE_CLOUD_REGION:-us-east-1}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  FORGE_TRACE_SAMPLE_RATIO: ${FORGE_TRACE_SAMPLE_RATIO:-0.1}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: forge
+      POSTGRES_DB: forge
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U forge -d forge"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    <<: *forge
+    command: [-mode, migrate]
+    environment:
+      <<: *forge-environment
+      OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *forge
+    command: [-mode, api, -addr, "0.0.0.0:8080"]
+    environment:
+      <<: *forge-environment
+      OTEL_SERVICE_NAME: forge-api
+    ports:
+      - "127.0.0.1:${FORGE_API_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, -T, "3", -O, /dev/null, "http://127.0.0.1:8080/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    <<: *forge
+    command: [-mode, worker, -metrics-addr, "0.0.0.0:9091"]
+    environment:
+      <<: *forge-environment
+      OTEL_SERVICE_NAME: forge-worker
+    deploy:
+      replicas: 10
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, wget, -q, -T, "3", -O, /dev/null, "http://127.0.0.1:9091/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+secrets:
+  postgres_password:
+    file: ./.secrets/postgres_password
+  database_url:
+    file: ./.secrets/database_url
+  api_token:
+    file: ./.secrets/api_token

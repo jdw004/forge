@@ -1,5 +1,7 @@
 .env
 .tools/
+.secrets/
+__pycache__/
 bin/
 coverage.out
 *.log

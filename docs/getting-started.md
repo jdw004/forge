@@ -22,6 +22,9 @@ Open **http://127.0.0.1:8080** for the operations console. Use **New workflow**
 to launch a parallel batch, dependency pipeline, or intentional breaker test.
 The [console guide](console.md) explains its controls and data scope.
 
+For independent processes packaged with PostgreSQL and optional monitoring,
+see the [container deployment guide](containers.md).
+
 In another terminal:
 
 ```sh
@@ -65,6 +68,8 @@ flags. The application reads environment variables directly; it does not load
 | `FORGE_WORKER_ID` | Generated | Unique identity for an independent worker |
 | `FORGE_API_TOKEN` | Empty | Bearer token; use a random secret |
 | `DATABASE_URL` | Empty | Required in PostgreSQL modes |
+| `DATABASE_URL_FILE` | Empty | Read the database URL from a mounted secret |
+| `FORGE_API_TOKEN_FILE` | Empty | Read the bearer token from a mounted secret |
 | `FORGE_METRICS_ADDR` | Empty | Optional worker metrics address |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Empty | Optional trace collector base URL |
 | `FORGE_TRACE_SAMPLE_RATIO` | `0.1` | Sampling ratio for new root traces |
@@ -73,6 +78,10 @@ flags. The application reads environment variables directly; it does not load
 Binding beyond loopback requires an API token of at least 32 bytes. Put a TLS
 reverse proxy in front of any remote deployment; the application listener is HTTP.
 Never share worker IDs between live independent workers.
+
+Set either a credential environment variable or its `_FILE` variant, not both.
+The file form supports mounted secrets without putting values in process
+environment variables. See the container guide for generated Compose credentials.
 
 ## PostgreSQL setup
 

@@ -5,7 +5,7 @@
 A Go workflow engine for coordinating agent tasks across worker pools, enforcing
 execution budgets, and exposing operational state through a unified control plane.
 
-**Go · PostgreSQL · Chi · OpenTelemetry · Prometheus**
+**Go · PostgreSQL · Chi · Docker · OpenTelemetry · Prometheus**
 
 ## Capabilities
 
@@ -54,6 +54,7 @@ additional adapters must preserve budget and cancellation semantics.
 | [Operations console](docs/console.md) | Workflow controls, worker views, and dashboard data scope |
 | [HTTP API](docs/api.md) | Workflows, authentication, idempotency, and cancellation |
 | [Observability](docs/observability.md) | Metrics, trace export, and worker monitoring |
+| [Container deployment](docs/containers.md) | Service topology, secrets, and monitoring configuration |
 | [Testing](docs/testing.md) | Unit, concurrency, and PostgreSQL integration tests |
 
 ## Development
