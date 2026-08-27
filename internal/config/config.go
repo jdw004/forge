@@ -80,10 +80,10 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 		return cfg, errors.New("unexpected positional arguments")
 	}
 	var err error
-	if cfg.Token, err = secret(getenv, "FORGE_API_TOKEN"); err != nil {
+	if cfg.Token, err = ReadSecret(getenv, "FORGE_API_TOKEN"); err != nil {
 		return cfg, err
 	}
-	if cfg.DatabaseURL, err = secret(getenv, "DATABASE_URL"); err != nil {
+	if cfg.DatabaseURL, err = ReadSecret(getenv, "DATABASE_URL"); err != nil {
 		return cfg, err
 	}
 	if cfg.Concurrency, err = strconv.Atoi(concurrency); err != nil {
@@ -101,7 +101,8 @@ func Load(args []string, getenv func(string) string) (Config, error) {
 	return cfg, cfg.Validate()
 }
 
-func secret(getenv func(string) string, name string) (string, error) {
+// ReadSecret reads a credential from the environment or its mounted _FILE form.
+func ReadSecret(getenv func(string) string, name string) (string, error) {
 	value, path := getenv(name), getenv(name+"_FILE")
 	if path == "" {
 		return value, nil

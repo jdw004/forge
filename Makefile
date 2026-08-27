@@ -19,6 +19,7 @@ vet:
 	go vet ./...
 build:
 	go build -o bin/forge ./cmd/forge
+	go build -o bin/forge-load ./cmd/forge-load
 setup-compose:
 	python3 scripts/configure-compose.py
 compose-check:

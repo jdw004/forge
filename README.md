@@ -56,6 +56,7 @@ additional adapters must preserve budget and cancellation semantics.
 | [Observability](docs/observability.md) | Metrics, trace export, and worker monitoring |
 | [Container deployment](docs/containers.md) | Service topology, secrets, and monitoring configuration |
 | [Testing](docs/testing.md) | Unit, concurrency, and PostgreSQL integration tests |
+| [Load testing](docs/load-testing.md) | Reproducible workloads, measured results, and benchmark scope |
 
 ## Development
 

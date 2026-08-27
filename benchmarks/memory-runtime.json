@@ -1,0 +1,44 @@
+{
+  "started_at": "2026-11-01T03:55:22.778936Z",
+  "backend": "memory",
+  "execution_model": "single_process_worker_pools",
+  "scenario": "runtime",
+  "tasks_requested": 100,
+  "workflow_id": "f68e1f861443f0abc8ec9e47663ec6a2",
+  "configured_worker_pools": 10,
+  "configured_capacity": 160,
+  "workers_observed": 10,
+  "peak_active_attempts": 100,
+  "concurrency_source": "observer_active_attempts_including_acknowledgement",
+  "latency_source": "executor_elapsed",
+  "poll_interval_ms": 100,
+  "elapsed_ms": 1201.407916,
+  "terminal_results_per_second": 83.23567596669639,
+  "states": {
+    "failed": 100
+  },
+  "reasons": {
+    "runtime_limit": 100
+  },
+  "unexpected_outcomes": 0,
+  "passed": true,
+  "attempt_latency": {
+    "samples": 100,
+    "p50_ms": 1000.018209,
+    "p95_ms": 1001.175083,
+    "max_ms": 1001.794917
+  },
+  "cleanup": "embedded_workers_stopped",
+  "driver_go_version": "go1.27.3",
+  "driver_platform": "darwin/arm64",
+  "task_spec": {
+    "id": "task-00001",
+    "steps": 5,
+    "step_ms": 1000,
+    "tokens_per_step": 10,
+    "token_limit": 1000000,
+    "runtime_ms": 1000,
+    "max_attempts": 1,
+    "runaway": true
+  }
+}

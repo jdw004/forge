@@ -6,13 +6,12 @@ dependency scheduling, cancellation, lease fencing, and heartbeat expiry.
 
 ## Dependencies
 
-Install Go 1.24 or newer and Docker Desktop. Download dependencies from a terminal
-with network access. While the rest of the project is being built, this command
-adds the PostgreSQL driver's transitive dependencies without removing the module
-requirements reserved for the API and telemetry:
+Install Go 1.24 or newer. Docker is needed only for the container-based
+PostgreSQL integration setup. Download dependencies from a terminal with
+network access:
 
 ```sh
-go get github.com/jackc/pgx/v5/pgxpool@v5.7.4
+go mod download
 ```
 
 Run unit tests and static analysis:
@@ -48,5 +47,6 @@ to let independent workers claim different tasks. The
 [pgx connection pool](https://pkg.go.dev/github.com/jackc/pgx/v5/pgxpool)
 provides bounded database connections and context-aware operations.
 
-These tests verify queue behavior, not the proposed 2,200-task throughput or
-75% reduction claims. Those require a separately recorded load test and baseline.
+The load runner tests exercise all three workload scenarios, timeout cleanup,
+authentication, and redirect rejection. See [load testing](load-testing.md) for
+commands, recorded engine measurements, and the limits of those measurements.
