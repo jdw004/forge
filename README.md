@@ -2,10 +2,24 @@
 
 ### Agent Execution Engine
 
-A Go workflow engine for coordinating agent tasks across worker pools, enforcing
-execution budgets, and exposing operational state through a unified control plane.
+A Go workflow engine designed for cloud deployment, coordinating agent tasks
+across worker pools, enforcing execution budgets, and exposing operational state
+through a unified control plane.
 
 **Go · PostgreSQL · Chi · Docker · OpenTelemetry · Prometheus**
+
+## Cloud deployment
+
+The reference AWS architecture places an HTTPS control plane on ECS Fargate,
+with independent worker services backed by PostgreSQL. Its default topology is
+two API replicas and ten worker replicas, each with 256 task slots. Credentials
+come from Secrets Manager, application logs flow to CloudWatch, and workers run
+in private subnets.
+
+The [deployment template](deploy/aws/stack.yaml) and
+[cloud setup guide](docs/cloud-deployment.md) cover image publishing, TLS,
+credential configuration, database migrations, and service rollout. Cloud hosting
+is the planned deployment target; provisioning is managed by the operator.
 
 ## Capabilities
 
@@ -50,6 +64,7 @@ additional adapters must preserve budget and cancellation semantics.
 
 | Guide | Coverage |
 | --- | --- |
+| [Cloud deployment](docs/cloud-deployment.md) | AWS architecture, infrastructure template, and release procedure |
 | [Getting started](docs/getting-started.md) | Installation, execution modes, and configuration |
 | [Operations console](docs/console.md) | Workflow controls, worker views, and dashboard data scope |
 | [HTTP API](docs/api.md) | Workflows, authentication, idempotency, and cancellation |
@@ -72,3 +87,17 @@ telemetry. The PostgreSQL integration suite separately exercises persistence,
 concurrent claims, lease recovery, and cancellation against a database instance.
 
 [Source repository](https://github.com/jdw004/forge)
+
+## Run locally
+
+With Go 1.24 or newer installed:
+
+```sh
+go mod download
+go run ./cmd/forge -mode demo
+```
+
+Open `http://127.0.0.1:8080` for the console. Demo mode runs ten embedded worker
+pools with an in-memory queue and simulated agents; no cloud credentials or
+database are required. See [getting started](docs/getting-started.md) for more
+configuration options.
