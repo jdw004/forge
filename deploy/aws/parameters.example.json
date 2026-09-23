@@ -1,0 +1,16 @@
+[
+  "VpcId=vpc-REPLACE",
+  "PublicSubnetIds=subnet-PUBLIC_A,subnet-PUBLIC_B",
+  "PrivateSubnetIds=subnet-PRIVATE_A,subnet-PRIVATE_B",
+  "DatabaseSecurityGroupId=sg-DATABASE",
+  "CertificateArn=arn:aws:acm:us-east-1:123456789012:certificate/REPLACE",
+  "ImageUri=123456789012.dkr.ecr.us-east-1.amazonaws.com/forge@sha256:REPLACE",
+  "DatabaseSecretArn=arn:aws:secretsmanager:us-east-1:123456789012:secret:forge/database-url-REPLACE",
+  "ApiTokenSecretArn=arn:aws:secretsmanager:us-east-1:123456789012:secret:forge/api-token-REPLACE",
+  "AllowedIngressCidr=REPLACE_WITH_YOUR_IP/32",
+  "EnableServices=false",
+  "ApiReplicas=2",
+  "WorkerReplicas=10",
+  "WorkerConcurrency=256",
+  "MonitoringSecurityGroupId="
+]

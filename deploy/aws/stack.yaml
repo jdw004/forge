@@ -1,0 +1,349 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Forge execution plane on ECS Fargate with an HTTPS ALB and private workers.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least two public subnets in distinct availability zones.
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Private application subnets with NAT or required AWS endpoints.
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group attached to the existing PostgreSQL instance in this VPC.
+  CertificateArn:
+    Type: String
+    AllowedPattern: 'arn:[^:]+:acm:[^:]+:[0-9]{12}:certificate/.+'
+    Description: Issued ACM certificate for the Forge hostname in this region.
+  ImageUri:
+    Type: String
+    AllowedPattern: '.+@sha256:[a-f0-9]{64}'
+    Description: ECR image digest containing the linux/amd64 binary and RDS CA bundle.
+  DatabaseSecretArn:
+    Type: String
+    AllowedPattern: 'arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+'
+    Description: Plain-string PostgreSQL URL secret, encrypted with the AWS-managed Secrets Manager key.
+  ApiTokenSecretArn:
+    Type: String
+    AllowedPattern: 'arn:[^:]+:secretsmanager:[^:]+:[0-9]{12}:secret:.+'
+    Description: Plain-string API token secret of at least 32 bytes.
+  EnableServices:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['false', 'true']
+    Description: Keep false until the migration task exits successfully.
+  ApiReplicas:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    MaxValue: 10
+  WorkerReplicas:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 100
+  WorkerConcurrency:
+    Type: String
+    Default: '256'
+    AllowedPattern: '[1-9][0-9]{0,2}|[1-3][0-9]{3}|40[0-8][0-9]|409[0-6]'
+  AllowedIngressCidr:
+    Type: String
+    Description: IPv4 CIDR allowed to reach HTTPS, for example your office egress IP with /32.
+    AllowedPattern: '([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])'
+  MonitoringSecurityGroupId:
+    Type: String
+    Default: ''
+    Description: Optional same-VPC Prometheus security group permitted to scrape private listeners.
+    AllowedPattern: '(|sg-[a-f0-9]+)'
+
+Conditions:
+  ServicesEnabled:
+    Fn::Equals: [{Ref: EnableServices}, 'true']
+  MonitoringEnabled:
+    Fn::Not:
+      - Fn::Equals: [{Ref: MonitoringSecurityGroupId}, '']
+
+Resources:
+  Cluster:
+    Type: AWS::ECS::Cluster
+  Logs:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RetentionInDays: 30
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - Fn::Sub: arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: ReadForgeSecrets
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: [{Ref: DatabaseSecretArn}, {Ref: ApiTokenSecretArn}]
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Forge HTTPS entry point
+      VpcId: {Ref: VpcId}
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: {Ref: AllowedIngressCidr}
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: 0.0.0.0/0
+  TaskSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Private Forge tasks
+      VpcId: {Ref: VpcId}
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: {Ref: LoadBalancerSecurityGroup}
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: {Ref: DatabaseSecurityGroupId}
+  DatabaseIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: {Ref: DatabaseSecurityGroupId}
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: {Ref: TaskSecurityGroup}
+  WorkerMetricsIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: MonitoringEnabled
+    Properties:
+      GroupId: {Ref: TaskSecurityGroup}
+      IpProtocol: tcp
+      FromPort: 9091
+      ToPort: 9091
+      SourceSecurityGroupId: {Ref: MonitoringSecurityGroupId}
+  ApiMetricsIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: MonitoringEnabled
+    Properties:
+      GroupId: {Ref: TaskSecurityGroup}
+      IpProtocol: tcp
+      FromPort: 8080
+      ToPort: 8080
+      SourceSecurityGroupId: {Ref: MonitoringSecurityGroupId}
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      Subnets: {Ref: PublicSubnetIds}
+      SecurityGroups: [{Ref: LoadBalancerSecurityGroup}]
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: {Ref: VpcId}
+      TargetType: ip
+      Port: 8080
+      Protocol: HTTP
+      HealthCheckPath: /readyz
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: {HttpCode: '200'}
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: {Ref: LoadBalancer}
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates: [{CertificateArn: {Ref: CertificateArn}}]
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: {Ref: TargetGroup}
+  ApiTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: '512'
+      Memory: '1024'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: {CpuArchitecture: X86_64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: {Fn::GetAtt: [ExecutionRole, Arn]}
+      ContainerDefinitions:
+        - Name: forge
+          Image: {Ref: ImageUri}
+          Essential: true
+          Command: [-mode, api, -addr, '0.0.0.0:8080']
+          User: '10001:10001'
+          ReadonlyRootFilesystem: true
+          LinuxParameters: {InitProcessEnabled: true, Capabilities: {Drop: [ALL]}}
+          StopTimeout: 30
+          PortMappings: [{ContainerPort: 8080, Protocol: tcp}]
+          Environment:
+            - {Name: FORGE_CLOUD_REGION, Value: {Ref: 'AWS::Region'}}
+            - {Name: OTEL_SERVICE_NAME, Value: forge-api}
+          Secrets:
+            - {Name: DATABASE_URL, ValueFrom: {Ref: DatabaseSecretArn}}
+            - {Name: FORGE_API_TOKEN, ValueFrom: {Ref: ApiTokenSecretArn}}
+          HealthCheck:
+            Command: [CMD, wget, -q, -T, '3', -O, /dev/null, 'http://127.0.0.1:8080/readyz']
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: {Ref: Logs}
+              awslogs-region: {Ref: 'AWS::Region'}
+              awslogs-stream-prefix: api
+  WorkerTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: '1024'
+      Memory: '2048'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: {CpuArchitecture: X86_64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: {Fn::GetAtt: [ExecutionRole, Arn]}
+      ContainerDefinitions:
+        - Name: forge
+          Image: {Ref: ImageUri}
+          Essential: true
+          Command: [-mode, worker, -metrics-addr, '0.0.0.0:9091']
+          User: '10001:10001'
+          ReadonlyRootFilesystem: true
+          LinuxParameters: {InitProcessEnabled: true, Capabilities: {Drop: [ALL]}}
+          StopTimeout: 30
+          PortMappings: [{ContainerPort: 9091, Protocol: tcp}]
+          Environment:
+            - {Name: FORGE_CONCURRENCY, Value: {Ref: WorkerConcurrency}}
+            - {Name: FORGE_CLOUD_REGION, Value: {Ref: 'AWS::Region'}}
+            - {Name: OTEL_SERVICE_NAME, Value: forge-worker}
+          Secrets:
+            - {Name: DATABASE_URL, ValueFrom: {Ref: DatabaseSecretArn}}
+            - {Name: FORGE_API_TOKEN, ValueFrom: {Ref: ApiTokenSecretArn}}
+          HealthCheck:
+            Command: [CMD, wget, -q, -T, '3', -O, /dev/null, 'http://127.0.0.1:9091/readyz']
+            Interval: 15
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 30
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: {Ref: Logs}
+              awslogs-region: {Ref: 'AWS::Region'}
+              awslogs-stream-prefix: worker
+  MigrationTask:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Cpu: '256'
+      Memory: '512'
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: {CpuArchitecture: X86_64, OperatingSystemFamily: LINUX}
+      ExecutionRoleArn: {Fn::GetAtt: [ExecutionRole, Arn]}
+      ContainerDefinitions:
+        - Name: forge
+          Image: {Ref: ImageUri}
+          Essential: true
+          Command: [-mode, migrate]
+          User: '10001:10001'
+          ReadonlyRootFilesystem: true
+          LinuxParameters: {InitProcessEnabled: true, Capabilities: {Drop: [ALL]}}
+          StopTimeout: 30
+          Secrets:
+            - {Name: DATABASE_URL, ValueFrom: {Ref: DatabaseSecretArn}}
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: {Ref: Logs}
+              awslogs-region: {Ref: 'AWS::Region'}
+              awslogs-stream-prefix: migrate
+  ApiService:
+    Type: AWS::ECS::Service
+    DependsOn: [HTTPSListener, DatabaseIngress]
+    Properties:
+      Cluster: {Ref: Cluster}
+      LaunchType: FARGATE
+      PlatformVersion: '1.4.0'
+      DesiredCount: {Fn::If: [ServicesEnabled, {Ref: ApiReplicas}, 0]}
+      TaskDefinition: {Ref: ApiTask}
+      HealthCheckGracePeriodSeconds: 60
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: {Ref: PrivateSubnetIds}
+          SecurityGroups: [{Ref: TaskSecurityGroup}]
+      LoadBalancers:
+        - ContainerName: forge
+          ContainerPort: 8080
+          TargetGroupArn: {Ref: TargetGroup}
+  WorkerService:
+    Type: AWS::ECS::Service
+    DependsOn: DatabaseIngress
+    Properties:
+      Cluster: {Ref: Cluster}
+      LaunchType: FARGATE
+      PlatformVersion: '1.4.0'
+      DesiredCount: {Fn::If: [ServicesEnabled, {Ref: WorkerReplicas}, 0]}
+      TaskDefinition: {Ref: WorkerTask}
+      DeploymentConfiguration:
+        DeploymentCircuitBreaker: {Enable: true, Rollback: true}
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: {Ref: PrivateSubnetIds}
+          SecurityGroups: [{Ref: TaskSecurityGroup}]
+
+Outputs:
+  ClusterName:
+    Value: {Ref: Cluster}
+  ApiServiceName:
+    Value: {Fn::GetAtt: [ApiService, Name]}
+  WorkerServiceName:
+    Value: {Fn::GetAtt: [WorkerService, Name]}
+  MigrationTaskDefinition:
+    Value: {Ref: MigrationTask}
+  TaskSecurityGroupId:
+    Value: {Ref: TaskSecurityGroup}
+  LoadBalancerDNS:
+    Value: {Fn::GetAtt: [LoadBalancer, DNSName]}
+  LoadBalancerHostedZoneId:
+    Value: {Fn::GetAtt: [LoadBalancer, CanonicalHostedZoneID]}
+  LogGroupName:
+    Value: {Ref: Logs}

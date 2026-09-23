@@ -1,4 +1,4 @@
-.PHONY: demo api worker migrate test test-console integration fmt vet build setup-compose compose-check up down observe observe-down load
+.PHONY: demo api worker migrate check test test-console test-scripts integration fmt vet build setup-compose compose-check up down observe observe-down load
 demo:
 	go run ./cmd/forge -mode demo
 api:
@@ -11,6 +11,9 @@ test:
 	go test -race ./...
 test-console:
 	node --test internal/console/model_test.mjs
+test-scripts:
+	python3 -m unittest discover -s scripts -p 'test_*.py'
+check: test vet test-console test-scripts build
 integration:
 	go test -race -tags integration ./internal/store
 fmt:

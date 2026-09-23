@@ -23,11 +23,23 @@ type Store struct {
 func New() *Store {
 	return &Store{workflows: map[string]*model.Workflow{}, keys: map[string]entry{}, nodes: map[string]model.Node{}}
 }
+func cloneTask(t model.Task) model.Task {
+	t.DependsOn = append([]string{}, t.DependsOn...)
+	if t.StartedAt != nil {
+		started := *t.StartedAt
+		t.StartedAt = &started
+	}
+	if t.FinishedAt != nil {
+		finished := *t.FinishedAt
+		t.FinishedAt = &finished
+	}
+	return t
+}
 func clone(w *model.Workflow) model.Workflow {
 	copy := *w
 	copy.Tasks = append([]model.Task{}, w.Tasks...)
 	for i := range copy.Tasks {
-		copy.Tasks[i].DependsOn = append([]string{}, copy.Tasks[i].DependsOn...)
+		copy.Tasks[i] = cloneTask(copy.Tasks[i])
 	}
 	copy.State = model.Aggregate(copy.Tasks)
 	return copy
@@ -104,10 +116,12 @@ func (s *Store) Claim(_ context.Context, worker string, lease time.Duration) (*m
 			t.WorkerID = worker
 			t.Claim = model.ID()
 			t.Attempt++
+			t.Tokens = 0
+			t.Reason = ""
 			t.StartedAt = &now
 			t.FinishedAt = nil
 			t.LeaseUntil = now.Add(lease)
-			copy := *t
+			copy := cloneTask(*t)
 			return &copy, nil
 		}
 	}

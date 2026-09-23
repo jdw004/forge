@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      containers:
+        description: Run PostgreSQL integration tests and build/smoke-test the Docker image
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go ${{ matrix.go }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.24.x', stable]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          cache-dependency-path: go.sum
+      - name: Check formatting
+        run: test -z "$(gofmt -l cmd internal)"
+      - run: go mod download
+      - run: go mod verify
+      - run: go test -race -count=1 -timeout 3m ./...
+      - run: go vet ./...
+      - run: make build
+      - name: Compile PostgreSQL integration suite
+        run: go test -tags integration -run '^$' ./internal/store
+      - name: Check module files are unchanged
+        run: git diff --exit-code -- go.mod go.sum
+
+  configuration:
+    name: Console and deployment configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: node --check internal/console/assets/console.mjs
+      - run: make test-console test-scripts
+      - name: Validate Compose configuration without starting containers
+        run: make compose-check
+      - name: Install CloudFormation linter
+        run: python -m pip install cfn-lint==1.56.2
+      - name: Validate AWS resource schemas
+        run: cfn-lint --non-zero-exit-code error -t deploy/aws/stack.yaml
+
+  containers:
+    name: Optional container validation
+    if: github.event_name == 'workflow_dispatch' && inputs.containers
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: forge
+          POSTGRES_PASSWORD: forge-ci-only
+          POSTGRES_DB: forge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forge -d forge_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache-dependency-path: go.sum
+      - name: Test PostgreSQL queue behavior
+        env:
+          TEST_DATABASE_URL: postgres://forge:forge-ci-only@127.0.0.1:5432/forge_test?sslmode=disable
+        run: go test -race -tags integration -count=1 -timeout 3m ./internal/store
+      - name: Build application image
+        run: docker build --tag forge:ci .
+      - name: Smoke-test binary startup in the image
+        run: docker run --rm --read-only --cap-drop ALL --security-opt no-new-privileges forge:ci -help

@@ -29,11 +29,16 @@ var _ queue.Store = (*Store)(nil)
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("configure PostgreSQL: %w", err)
+		// Driver parse errors can contain the entire connection string. Never
+		// return them to the process logger, including through error wrapping.
+		return nil, errors.New("configure PostgreSQL: invalid connection settings")
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("connect PostgreSQL: %w", err)
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("connect PostgreSQL: %w", ctx.Err())
+		}
+		return nil, errors.New("connect PostgreSQL: connection failed; check database availability, credentials, and TLS settings")
 	}
 	return &Store{pool: pool}, nil
 }

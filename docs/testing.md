@@ -21,6 +21,35 @@ go test -race ./...
 go vet ./...
 ```
 
+With Node.js 22 or newer and Python 3 installed, `make check` also runs the
+console model and configuration-script tests and builds both executables. It
+does not start containers or contact cloud services. `make compose-check` parses
+the deployment configuration using the Docker CLI without starting a daemon.
+
+## Continuous integration
+
+The [CI workflow](../.github/workflows/ci.yml) runs on pushes to `main`, pull
+requests, and manual dispatch. Default jobs check Go 1.24 and the current stable
+toolchain, race detection, vet, formatting, module integrity, executable builds,
+console logic, credential-file generation, Compose configuration, and
+CloudFormation resource schemas with
+[cfn-lint](https://github.com/aws-cloudformation/cfn-lint). The integration suite
+is compiled in default CI but is not executed without a database.
+
+The optional **containers** input on a manual workflow run enables PostgreSQL
+integration tests, a Docker image build, and an image startup smoke test. It is
+disabled by default, so pushes and pull requests start no containers. The
+database runs as a disposable
+[GitHub Actions service](https://docs.github.com/en/actions/tutorials/use-containerized-services/create-postgresql-service-containers)
+with CI-only credentials. No AWS credentials, deployments, or image publishing
+are configured in the workflow.
+
+The workflow must run on GitHub before its results can be reported as passing.
+Local checks do not establish PostgreSQL runtime behavior, a functioning cloud
+deployment, or browser rendering. The optional image smoke test checks binary
+startup only; full-stack HTTP, collector delivery, and cloud routing still need
+their own deployment checks.
+
 ## PostgreSQL integration suite
 
 Start Docker Desktop, then run from the repository root:
