@@ -1,4 +1,12 @@
 .env
+.env.*
+*.env
+!.env.example
+.aws/
+.ssh/
+*.key
+*.p12
+*.pfx
 .tools/
 .secrets/
 __pycache__/
