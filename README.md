@@ -86,8 +86,6 @@ Tests cover execution, budget enforcement, worker lifecycle, API behavior, and
 telemetry. The PostgreSQL integration suite separately exercises persistence,
 concurrent claims, lease recovery, and cancellation against a database instance.
 
-[Source repository](https://github.com/jdw004/forge)
-
 ## Run locally
 
 With Go 1.24 or newer installed:
