@@ -1,7 +1,5 @@
 # Forge
 
-[GitHub repository](https://github.com/jdw004/forge)
-
 An agent execution engine in Go, with a Chi HTTP API, dependency-aware workflows,
 bounded worker pools, and PostgreSQL task leases. Token and runtime circuit
 breakers stop the built-in simulated agents. No cloud credentials or model
