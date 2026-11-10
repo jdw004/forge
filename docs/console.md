@@ -25,6 +25,10 @@ states, token usage, attempts, worker assignment, and failure reasons. The task
 inspector pages through 100 tasks at a time. **Cancel workflow** terminates
 pending/running work without changing already terminal tasks.
 
+Filter **Worker pools** by **Busy** to find pools executing tasks or **Available
+capacity** to find pools with free task slots. A busy pool can still have capacity.
+The filter stays selected as heartbeats refresh; overview totals cover the full fleet.
+
 ## Interpreting the dashboard
 
 The workflow table and task cards cover the latest 100 workflows. They are not
@@ -37,13 +41,18 @@ polling in hidden tabs. A failed refresh displays a stale-data notice instead of
 inventing activity. Worker cards include only recent heartbeats. In demo mode,
 the pools share one process; in API mode, they represent independent workers.
 
-## Cloud profile and access
+## Execution plane and access
 
-The cloud deployment profile is explicitly marked **Simulated**. Its region is a
-display setting from `FORGE_CLOUD_REGION`, defaulting to `us-east-1`. It does not
-provision resources or establish a cloud connection. The setup dialog describes
-the database, process, TLS, and telemetry configuration needed for deployment.
-A trace exporter being configured does not establish successful collector delivery.
+The execution plane card shows configured region, task capacity, and active
+attempts from API metadata and worker heartbeats. Its status indicates whether
+workers are reporting; a failed refresh marks the card and worker status stale.
+The region is a display setting from `FORGE_CLOUD_REGION`, defaulting to
+`us-east-1`, and does not verify cloud hosting. The console uses the same
+operations view across execution modes; `/v1/system` retains runtime metadata.
+
+**Execution policies** explains dependencies, budgets, leases, and cancellation,
+and links to the [cloud deployment guide](cloud-deployment.md). Deployment
+commands and storage implementation details belong in the operator guides.
 
 If API authentication is enabled, use **Connection settings** to enter the bearer
 token. It is held in page memory, never in local storage or cookies, and cleared

@@ -1,6 +1,6 @@
 # Forge
 
-### Agent Execution Engine
+### Cloud Agent Orchestration
 
 A Go workflow engine designed for cloud deployment, coordinating agent tasks
 across worker pools, enforcing execution budgets, and exposing operational state
@@ -30,7 +30,7 @@ is the planned deployment target; provisioning is managed by the operator.
 - **Execution guardrails.** Per-attempt token and runtime budgets, cooperative
   cancellation, and terminal circuit-breaker outcomes.
 - **Operations console.** Workflow inspection, submission controls, worker
-  capacity, execution history, and deployment configuration in one interface.
+  capacity, execution history, and execution policies in one interface.
 - **Operational visibility.** Prometheus metrics for attempts, completions,
   budgets, and latency; optional OpenTelemetry traces for requests and tasks.
 - **Controlled API access.** Bearer authentication, idempotent submission,
@@ -86,16 +86,6 @@ Tests cover execution, budget enforcement, worker lifecycle, API behavior, and
 telemetry. The PostgreSQL integration suite separately exercises persistence,
 concurrent claims, lease recovery, and cancellation against a database instance.
 
-## Run locally
-
-With Go 1.24 or newer installed:
-
-```sh
-go mod download
-go run ./cmd/forge -mode demo
-```
-
-Open `http://127.0.0.1:8080` for the console. Demo mode runs ten embedded worker
-pools with an in-memory queue and simulated agents; no cloud credentials or
-database are required. See [getting started](docs/getting-started.md) for more
-configuration options.
+See [getting started](docs/getting-started.md) for development startup and
+configuration, or [cloud deployment](docs/cloud-deployment.md) to provision the
+AWS execution plane and serve the console from your HTTPS hostname.

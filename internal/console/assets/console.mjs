@@ -51,12 +51,13 @@ function renderOverview() {
   const totals = summarize(state.workflows, state.nodes);
   for (const [id, value] of [['running-count', totals.running], ['completed-count', totals.succeeded], ['failed-count', totals.failed], ['worker-count', totals.workers]]) $(id).textContent = format.format(value);
   $('capacity-label').textContent = `${format.format(totals.capacity)} configured task slots`;
-  $('mode-label').textContent = state.system.mode === 'demo' ? 'DEMO CLUSTER' : 'POSTGRESQL CLUSTER';
-  $('worker-mode').textContent = state.system.mode === 'demo' ? 'Embedded pools' : 'Independent processes';
-  $('worker-description').textContent = state.system.mode === 'demo' ? 'Worker pools in one process · heartbeat freshness under 10 seconds' : 'Independent processes · heartbeat freshness under 10 seconds';
-  $('cloud-region').textContent = state.system.cloud.region;
-  $('storage-label').textContent = state.system.storage === 'memory' ? 'In-memory queue' : 'PostgreSQL';
-  $('tracing-label').textContent = state.system.tracing_configured ? 'Configured · delivery unverified' : 'Not configured';
+  $('mode-label').textContent = 'CONTROL PLANE';
+  $('execution-status').textContent = totals.workers ? 'WORKERS REPORTING' : 'AWAITING WORKERS';
+  $('worker-mode').textContent = `${format.format(totals.workers)} reporting`;
+  $('worker-description').textContent = 'Worker fleet · heartbeat freshness under 10 seconds';
+  $('cloud-region').textContent = state.system.cloud.region || 'Not specified';
+  $('execution-capacity').textContent = `${format.format(totals.capacity)} task slots`;
+  $('execution-active').textContent = format.format(totals.active);
   state.samples.push(totals.active);
   state.samples = state.samples.slice(-60);
   const paths = chartPaths(state.samples);
@@ -105,7 +106,9 @@ function renderWorkflows() {
 
 function renderWorkers() {
   const cards = document.createDocumentFragment();
-  for (const node of state.nodes) {
+  const filter = $('worker-filter').value;
+  const nodes = state.nodes.filter(node => filter === 'busy' ? node.active > 0 : filter === 'available' ? node.active < node.capacity : true);
+  for (const node of nodes) {
     const card = element('article', 'worker-card');
     const top = element('div', 'worker-top'); top.append(element('span', 'worker-icon', '▦'), element('span', 'worker-status', '● Reporting'));
     const id = element('div', 'worker-id', node.id); id.title = node.id;
@@ -114,6 +117,8 @@ function renderWorkers() {
     cards.append(card);
   }
   if (!state.nodes.length) cards.append(element('p', 'muted', 'No workers are reporting. Start a worker connected to this task store.'));
+  else if (!nodes.length) cards.append(element('p', 'muted', filter === 'busy' ? 'No worker pools are executing tasks.' : 'No worker pools have available capacity.'));
+  $('worker-scope').textContent = `${format.format(nodes.length)} of ${format.format(state.nodes.length)} worker pools shown`;
   $('worker-grid').replaceChildren(cards);
 }
 
@@ -187,6 +192,9 @@ async function refresh(force = false) {
     state.connected = false;
     $('connection-indicator').className = 'connection-indicator offline';
     $('connection-status').textContent = 'Control plane unavailable · displayed data may be stale';
+    $('mode-label').textContent = 'UNAVAILABLE';
+    $('execution-status').textContent = 'DATA STALE';
+    $('worker-mode').textContent = 'Data stale';
     $('cancel-workflow').disabled = true;
     showNotice(error.message || 'Cannot reach the API. Check your connection.');
   } finally {
@@ -200,6 +208,7 @@ document.querySelectorAll('[data-close]').forEach(button => button.addEventListe
 $('refresh-button').addEventListener('click', () => refresh(true));
 $('workflow-search').addEventListener('input', renderWorkflows);
 $('workflow-filter').addEventListener('change', renderWorkflows);
+$('worker-filter').addEventListener('change', renderWorkers);
 $('close-detail').addEventListener('click', () => { state.selected = null; state.detail = null; detailRequest++; $('workflow-detail').hidden = true; renderWorkflows(); });
 $('workflow-preset').addEventListener('change', () => {
   const preset = $('workflow-preset').value;

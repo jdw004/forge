@@ -66,7 +66,7 @@ func New(cfg config.Config, store queue.Store, logger *slog.Logger, monitor *tel
 	for i := 0; i < count; i++ {
 		id := cfg.WorkerID
 		if cfg.Mode == "demo" {
-			id = fmt.Sprintf("demo-%02d", i+1)
+			id = fmt.Sprintf("worker-%02d", i+1)
 		}
 		w, err := worker.New(store, worker.Config{ID: id, Concurrency: cfg.Concurrency, Logger: logger, Observer: monitor})
 		if err != nil {

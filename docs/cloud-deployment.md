@@ -8,8 +8,8 @@ with 256 execution slots each. This is provisioned capacity, not a benchmark.
 
 The deployment files are provided for a future rollout. No hosted endpoint or
 AWS deployment is established by this repository. The console's cloud region is
-configuration metadata; its simulated connection indicator is not an AWS health
-check. Workers continue to use the included agent simulator.
+configuration metadata; its worker reporting indicator reflects heartbeats,
+not an AWS health check. Workers continue to use the included agent simulator.
 
 ## Prepare the account
 
